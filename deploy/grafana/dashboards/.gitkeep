@@ -1,0 +1,2 @@
+# Grafana dashboard JSONs (latency, tokens/sec, barge-in, endpoint accuracy)
+# are shipped here in M6 (PRD §12, K6).

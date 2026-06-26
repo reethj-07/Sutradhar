@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sutradhar — Voice Agent (diagnostic client)</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, sans-serif; background: #0b0e14; color: #d6deeb;
+           margin: 0; display: grid; place-items: center; min-height: 100vh; }
+    main { width: min(680px, 92vw); }
+    h1 { font-weight: 650; letter-spacing: .3px; }
+    .card { background: #11161f; border: 1px solid #1d2735; border-radius: 14px;
+            padding: 22px 24px; }
+    button { font-size: 1rem; padding: 12px 20px; border-radius: 10px; border: 0;
+             background: #2f81f7; color: white; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    .muted { color: #7c8aa0; font-size: .92rem; }
+    #log { margin-top: 18px; white-space: pre-wrap; font-family: ui-monospace, monospace;
+           font-size: .85rem; max-height: 280px; overflow:auto; }
+    .pill { display:inline-block; padding:2px 10px; border-radius:999px; background:#1d2735; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sutradhar <span class="pill">diagnostic client</span></h1>
+    <div class="card">
+      <p class="muted">
+        Browser microphone client for the Sutradhar voice agent. The streaming
+        WebSocket pipeline (mic → VAD → STT → LLM → TTS → speaker) is wired in
+        <strong>M1</strong>; this page is the scaffold placeholder.
+      </p>
+      <button id="talk" disabled>Hold to talk (M1)</button>
+      <div id="log"></div>
+    </div>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
