@@ -43,8 +43,25 @@ its first tagged release, so everything lives under *Unreleased* by milestone.
   state machine, turn detector, tool registry, latency, stubs, factory and the
   app endpoints.
 
-### Next — M1 (Core loop)
+### M1 — Core loop  🚧 (in progress)
 
-- Real providers (faster-whisper STT, Silero VAD, Ollama LLM, Piper TTS).
-- WebSocket transport + browser mic client; half-duplex streaming pipeline.
-- Per-stage + voice-to-voice latency instrumentation and a baseline report.
+Done:
+- **Streaming half-duplex `Pipeline`** wiring Transport → VAD → STT →
+  TurnDetector → Orchestrator(LLM) → TTS → Transport over bounded queues, with
+  STT running as its own task so partials are available during the utterance and
+  the turn detector endpoints on the fused signal.
+- **`DialogueOrchestrator.respond`**: streams the LLM and splits tokens into
+  TTS-ready clauses (first-clause synthesis), cancellation-aware for M2 barge-in.
+- **Per-stage + voice-to-voice latency** captured per turn via `LatencyTracker`.
+- **Loopback transport** + composition root (`runtime.build_pipeline`) + a
+  no-hardware **`sutradhar demo`** that drives the real pipeline with stubs.
+- **Integration tests** proving the spoken→spoken loop end-to-end (endpoint →
+  transcript → streamed reply → audio out) with no models. Fixed a real
+  concurrency bug (producer not yielding to the STT pump) found by the test.
+- Stub STT now streams incremental partials; `append_spoken` reassembles clauses
+  with natural spacing.
+
+Next:
+- Real providers (Silero VAD, faster-whisper STT on GPU, Ollama LLM, Piper TTS).
+- WebSocket transport + browser AudioWorklet mic client + `/ws` wiring.
+- Baseline P50/P95 latency report measured on the GTX 1650.
