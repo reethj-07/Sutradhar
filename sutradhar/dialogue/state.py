@@ -98,9 +98,18 @@ class TurnStateMachine:
         self.transition(TurnState.SPEAKING)
 
     def append_spoken(self, text: str) -> None:
-        """Record audio that has actually been emitted (for truncation accuracy)."""
-        if self.current_turn is not None:
-            self.current_turn.spoken_text += text
+        """Record text that has actually been spoken (for truncation accuracy).
+
+        Segments arrive clause-by-clause; join them with a single space so the
+        reconstructed turn reads naturally in history and barge-in records.
+        """
+        if self.current_turn is None or not text:
+            return
+        existing = self.current_turn.spoken_text
+        if existing and not existing.endswith(" ") and not text.startswith(" "):
+            self.current_turn.spoken_text = f"{existing} {text}"
+        else:
+            self.current_turn.spoken_text = existing + text
 
     def complete_agent_turn(self) -> None:
         """Finish a non-interrupted agent turn, committing it to history."""

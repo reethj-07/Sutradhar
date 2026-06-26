@@ -80,14 +80,17 @@ class StubSTT:
     async def start(self) -> None: ...
 
     async def stream(self, audio: AsyncIterator[AudioFrame]) -> AsyncIterator[TranscriptChunk]:
-        # Drain audio to mimic real consumption (and end-of-stream detection).
-        async for _ in audio:
-            pass
+        # Reveal one word of the scripted transcript per inbound frame, so a
+        # non-empty partial is available *during* the utterance (mimicking a
+        # real streaming ASR), then emit the final once the input stream closes.
         words = self.next_transcript.split()
-        acc: list[str] = []
-        for i, w in enumerate(words):
-            acc.append(w)
-            yield TranscriptChunk(text=" ".join(acc), is_final=False, turn_seq=i)
+        revealed = 0
+        async for _ in audio:
+            if revealed < len(words):
+                revealed += 1
+                yield TranscriptChunk(
+                    text=" ".join(words[:revealed]), is_final=False, turn_seq=revealed - 1
+                )
             await asyncio.sleep(0)
         yield TranscriptChunk(text=" ".join(words), is_final=True, confidence=0.95)
 
