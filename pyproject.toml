@@ -1,0 +1,185 @@
+[project]
+name = "sutradhar"
+version = "0.1.0"
+description = "Sutradhar — a production-grade, open-source, low-latency real-time Voice AI agent platform."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = { text = "MIT" }
+authors = [{ name = "Reeth Jain", email = "reethjainrj777@gmail.com" }]
+keywords = ["voice-ai", "speech", "stt", "tts", "llm", "asyncio", "real-time", "barge-in"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+# Base dependencies are intentionally LIGHT (no heavy ML wheels) so the package
+# imports, lints, type-checks and unit-tests on CI without downloading models.
+# Provider implementations live behind interfaces and pull their heavy deps via
+# the optional extras below.
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "structlog>=24.1",
+    "numpy>=1.26",
+    "typing-extensions>=4.11",
+    "anyio>=4.4",
+    "websockets>=12.0",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    "prometheus-client>=0.20",
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+# --- Local-OSS provider extras (downloaded on demand, GPU/CPU as per PRD §7) ---
+stt = ["faster-whisper>=1.0.3"]
+tts = ["piper-tts>=1.2.0", "onnxruntime>=1.18"]
+llm = ["ollama>=0.3.0"]
+vad = ["onnxruntime>=1.18"]
+memory = ["sqlite-vec>=0.1.1"]
+webrtc = ["aiortc>=1.9"]
+otlp = ["opentelemetry-exporter-otlp-proto-grpc>=1.25"]
+
+# Everything an end-user needs for the full local run path.
+local = [
+    "faster-whisper>=1.0.3",
+    "piper-tts>=1.2.0",
+    "onnxruntime>=1.18",
+    "ollama>=0.3.0",
+    "sqlite-vec>=0.1.1",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25",
+]
+
+# Developer / CI tooling.
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "pytest-timeout>=2.3",
+    "ruff>=0.5.0",
+    "black>=24.4",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+    "types-requests>=2.32",
+]
+
+[project.scripts]
+sutradhar = "sutradhar.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/reethj-07/Sutradhar"
+Repository = "https://github.com/reethj-07/Sutradhar"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sutradhar"]
+
+# ----------------------------------------------------------------------------
+# Tooling configuration
+# ----------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["sutradhar", "eval", "mock_backend", "tests"]
+extend-exclude = ["docs/_prd_raw.txt"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "ASYNC",# flake8-async
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line length handled by black
+    "B008",   # function calls in arg defaults (FastAPI/typer idiom)
+    "N818",   # exception names need not end in Error
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["N802", "N803"]
+"eval/**" = ["N999"]  # the `eval` dir name shadows a builtin but matches PRD §16
+
+[tool.ruff.lint.isort]
+known-first-party = ["sutradhar", "eval", "mock_backend"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+plugins = ["pydantic.mypy"]
+exclude = ["^docs/", "^deploy/", "^clients/"]
+
+# Third-party libraries without type stubs — don't block CI on their absence.
+[[tool.mypy.overrides]]
+module = [
+    "faster_whisper.*",
+    "piper.*",
+    "onnxruntime.*",
+    "ollama.*",
+    "sqlite_vec.*",
+    "aiortc.*",
+    "av.*",
+    "sounddevice.*",
+    "opentelemetry.exporter.*",
+]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra -q --strict-markers --timeout=60"
+markers = [
+    "unit: fast isolated unit tests",
+    "integration: full-pipeline / cross-component tests",
+    "load: concurrency / load tests",
+    "slow: tests that download models or take >5s",
+    "gpu: tests requiring a CUDA GPU",
+]
+filterwarnings = [
+    # Starlette's TestClient warns about httpx; not actionable for us.
+    "ignore:Using `httpx` with `starlette.testclient`:DeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["sutradhar"]
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
