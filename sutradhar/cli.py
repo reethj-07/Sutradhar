@@ -59,9 +59,30 @@ def serve(
 
 
 @app.command()
-def demo() -> None:
-    """Run the one-command voice demo (implemented in M1)."""
-    console.print("[yellow]The voice demo is implemented in M1.[/yellow]")
+def demo(
+    real: bool = typer.Option(
+        False, "--real/--stub", help="Use real providers (needs GPU/Ollama) vs stubs."
+    ),
+) -> None:
+    """Run a one-command demo of the streaming pipeline.
+
+    `--stub` (default) drives the real pipeline with dependency-free stubs over a
+    loopback transport — no mic/GPU/Ollama needed. `--real` runs the browser
+    voice path; launch `sutradhar serve` and open the web client instead.
+    """
+    if real:
+        console.print(
+            "[yellow]The real voice demo runs over the browser WebSocket path.[/yellow]\n"
+            "Start the server with [bold]sutradhar serve[/bold] and open "
+            "[bold]clients/web/index.html[/bold]."
+        )
+        raise typer.Exit(code=0)
+
+    import asyncio
+
+    from sutradhar.demo import run_stub_demo
+
+    asyncio.run(run_stub_demo(console))
     raise typer.Exit(code=0)
 
 
