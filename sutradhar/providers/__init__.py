@@ -86,7 +86,7 @@ def build_turn_detector(settings: Settings) -> TurnDetector:
     if p == "stub":
         from sutradhar.providers.stub import StubTurnDetector
 
-        return StubTurnDetector()
+        return StubTurnDetector(silence_ms=settings.turn.silence_ms)
     if p in ("vad_pause", "hybrid"):
         from sutradhar.providers.turn.detector import HybridTurnDetector
 

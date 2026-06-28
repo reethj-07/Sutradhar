@@ -1,28 +1,35 @@
-"""Streaming half-duplex pipeline (PRD §5, §6.2, M1).
+"""Streaming pipeline with turn-taking + barge-in (PRD §5, §6.2, §9; M1/M2).
 
-Wires the async stages — Transport -> VAD -> STT -> TurnDetector ->
-Orchestrator(LLM) -> TTS -> Transport — for one session, over bounded queues with
-explicit backpressure. STT runs as its own task fed by a bounded stream, so
-partial transcripts are available *during* the utterance and the turn detector
-can endpoint on the fused acoustic+semantic signal.
+State-machine-driven **single frame loop**: exactly one consumer reads inbound
+audio and dispatches each frame by turn state.
 
-M1 is half-duplex (listen, then speak); barge-in (interrupting the agent while it
-speaks) is layered on in M2 — the cancellation token is already threaded through
-so that change is local. Every turn records per-stage and voice-to-voice latency.
+* **LISTENING** — feed VAD + STT (STT runs as its own pump task so partials are
+  available mid-utterance); the turn detector decides the endpoint. On endpoint
+  the agent reply is launched as a background task and the turn switches to
+  SPEAKING.
+* **SPEAKING** — the *same* loop keeps running VAD on inbound audio to detect
+  **barge-in** (PRD §9.2). On confirmed user speech it cancels the in-flight
+  LLM + TTS (shared :class:`CancellationToken`), flushes playout (≤200 ms stop),
+  and reconciles state via ``state.barge_in()`` so history reflects the truncated
+  turn — then resumes LISTENING.
+
+Using one consumer (never cancelling a pending ``__anext__`` on the frame
+generator) is deliberate: a second consumer or a cancelled read would corrupt the
+async generator. The agent reply is the cancellable background task instead.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
-from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from sutradhar.core.cancellation import CancellationToken
+from sutradhar.core.cancellation import CancellationToken, OperationCancelled
 from sutradhar.core.config import AudioSettings
 from sutradhar.core.queues import BoundedStream
 from sutradhar.core.session import Session
-from sutradhar.core.types import AudioFrame, Stage, TurnState
+from sutradhar.core.types import AudioFrame, Stage, TurnState, VADResult
 from sutradhar.dialogue.orchestrator import DialogueOrchestrator
 from sutradhar.interfaces import LLM, STT, TTS, VAD, TurnDetector
 from sutradhar.interfaces.tracer import Tracer
@@ -47,7 +54,7 @@ class PipelineComponents:
 
 
 class Pipeline:
-    """Runs the half-duplex streaming loop for one session."""
+    """Runs the streaming loop (listen → speak, interruptible) for one session."""
 
     def __init__(
         self,
@@ -68,127 +75,182 @@ class Pipeline:
         self.metrics = metrics
         self.tracer: Tracer = tracer or NoopTracer()
         self.audio: AudioSettings = session.settings.audio
+        self.barge_in_ms = session.settings.turn.barge_in_ms
         self._stt_in_max = 512
 
-    async def run(self) -> None:
-        """Consume the session's audio, answering each user utterance in turn."""
-        bind_context(session_id=self.session.session_id)
-        frames = self.transport.recv_audio().__aiter__()
-        while True:
-            transcript = await self._listen(frames)
-            if transcript is None:
-                break
-            await self._respond(transcript)
+        # Per-phase working state.
+        self._stt_in: BoundedStream[AudioFrame] | None = None
+        self._stt_task: asyncio.Task[None] | None = None
+        self._latest: dict[str, str] = {"partial": "", "final": ""}
+        self._started = False
+        self._trailing = 0.0
+        self._utt = 0.0
+        self._listen_turn_id = ""
+        self._resp_turn_id = ""
+        self._cancel: CancellationToken | None = None
+        self._respond_task: asyncio.Task[None] | None = None
+        self._barge_ms = 0.0
 
-    # -- listen: frames -> VAD -> STT -> endpoint -------------------------
-    async def _listen(self, frames: AsyncIterator[AudioFrame]) -> str | None:
-        vad, stt, turn = self.components.vad, self.components.stt, self.components.turn
-        vad.reset()
-        turn.reset()
+    async def run(self) -> None:
+        """Consume the session's audio, listening and replying turn by turn."""
+        bind_context(session_id=self.session.session_id)
+        self._begin_listening()
+        async for frame in self.transport.recv_audio():
+            res = self.components.vad.detect(frame)
+            if self.state.state is TurnState.SPEAKING:
+                await self._on_speaking_frame(frame, res)
+            else:
+                await self._on_listening_frame(frame, res)
+        await self._on_stream_end()
+
+    # -- LISTENING --------------------------------------------------------
+    def _begin_listening(self) -> None:
+        self.components.vad.reset()
+        self.components.turn.reset()
         if self.state.state in (TurnState.IDLE, TurnState.LISTENING):
             self.state.begin_user_turn()
+        self._listen_turn_id = uuid.uuid4().hex[:8]
+        self.latency.begin_turn(self._listen_turn_id)
+        self._stt_in = BoundedStream(self._stt_in_max, name="stt-in")
+        self._latest = {"partial": "", "final": ""}
+        self._stt_task = asyncio.create_task(self._pump_stt(self._stt_in, self._latest))
+        self._started = False
+        self._trailing = 0.0
+        self._utt = 0.0
 
-        turn_id = uuid.uuid4().hex[:8]
-        self.latency.begin_turn(turn_id)
+    async def _pump_stt(self, stt_in: BoundedStream[AudioFrame], latest: dict[str, str]) -> None:
+        async for chunk in self.components.stt.stream(stt_in):
+            if chunk.is_final:
+                latest["final"] = chunk.text
+            else:
+                latest["partial"] = chunk.text
 
-        stt_in: BoundedStream[AudioFrame] = BoundedStream(self._stt_in_max, name="stt-in")
-        latest = {"partial": "", "final": ""}
+    async def _on_listening_frame(self, frame: AudioFrame, res: VADResult) -> None:
+        if res.is_speech:
+            self._started = True
+            self._trailing = 0.0
+        elif self._started:
+            self._trailing += frame.duration_ms
+        if not self._started or self._stt_in is None:
+            return
+        await self._stt_in.put(frame)
+        await asyncio.sleep(0)  # let the STT pump consume the frame
+        self._utt += frame.duration_ms
+        ctx = TurnContext(
+            transcript=self._latest["partial"] or self._latest["final"],
+            is_speech=res.is_speech,
+            last_vad=res,
+            trailing_silence_ms=self._trailing,
+            utterance_ms=self._utt,
+        )
+        if self.components.turn.observe(ctx).endpoint:
+            if self.metrics is not None:
+                self.metrics.endpoint_decisions.labels(outcome="fired").inc()
+            await self._endpoint()
 
-        async def pump_stt() -> None:
-            async for chunk in stt.stream(stt_in):
-                if chunk.is_final:
-                    latest["final"] = chunk.text
-                else:
-                    latest["partial"] = chunk.text
-
-        stt_task = asyncio.create_task(pump_stt())
-        started = False
-        trailing_ms = 0.0
-        utterance_ms = 0.0
-        endpoint = False
-
-        with self.tracer.span("turn.listen", {"turn_id": turn_id}):
-            async for frame in frames:
-                res = vad.detect(frame)
-                if res.is_speech:
-                    started = True
-                    trailing_ms = 0.0
-                elif started:
-                    trailing_ms += frame.duration_ms
-
-                if not started:
-                    continue
-
-                await stt_in.put(frame)
-                # Yield so the STT pump task can consume the frame and update the
-                # partial transcript before the turn detector reads it.
-                await asyncio.sleep(0)
-                utterance_ms += frame.duration_ms
-                ctx = TurnContext(
-                    transcript=latest["partial"] or latest["final"],
-                    is_speech=res.is_speech,
-                    last_vad=res,
-                    trailing_silence_ms=trailing_ms,
-                    utterance_ms=utterance_ms,
-                )
-                if turn.observe(ctx).endpoint:
-                    endpoint = True
-                    if self.metrics is not None:
-                        self.metrics.endpoint_decisions.labels(outcome="fired").inc()
-                    break
-
-        # End of utterance (endpoint) or end of audio stream.
-        if not started:
-            stt_in.close()
-            await _drain(stt_task)
-            return None
-
+    async def _endpoint(self) -> None:
         self.latency.mark_endpoint()
-        if endpoint:
-            self.tracer.event("endpoint", {"utterance_ms": utterance_ms})
-        with self.latency.stage(Stage.STT, provider=getattr(stt, "name", "?")):
-            stt_in.close()
-            await _drain(stt_task)
-        transcript = (latest["final"] or latest["partial"]).strip()
-        _log.info("user_utterance", turn_id=turn_id, text=transcript, endpoint=endpoint)
-        return transcript or None
-
-    # -- respond: LLM -> clauses -> TTS -> transport ----------------------
-    async def _respond(self, transcript: str) -> None:
+        with self.latency.stage(Stage.STT, provider=getattr(self.components.stt, "name", "?")):
+            if self._stt_in is not None:
+                self._stt_in.close()
+            await _drain(self._stt_task)
+        self._stt_task = None
+        transcript = (self._latest["final"] or self._latest["partial"]).strip()
+        _log.info("user_utterance", turn_id=self._listen_turn_id, text=transcript)
+        if not transcript:
+            self._begin_listening()
+            return
+        # Launch the agent reply as a cancellable task and switch to SPEAKING.
         self.state.add_user_message(transcript)
-        turn_id = uuid.uuid4().hex[:8]
         self.state.begin_thinking()
-        self.state.begin_agent_turn(turn_id)
-
-        cancel = CancellationToken()  # M2 uses this to interrupt on barge-in
+        self._resp_turn_id = uuid.uuid4().hex[:8]
+        self._cancel = CancellationToken()
+        self._barge_ms = 0.0
+        self.components.vad.reset()  # fresh VAD state for barge-in monitoring
+        self.state.begin_agent_turn(self._resp_turn_id)
         self.latency.start_stage(Stage.LLM)
-        clauses = self.orchestrator.respond(transcript, self.latency, cancel)
+        self._respond_task = asyncio.create_task(self._speak(transcript, self._cancel))
 
-        first_audio = True
-        with self.tracer.span("turn.respond", {"turn_id": turn_id}):
+    # -- SPEAKING (barge-in monitoring) -----------------------------------
+    async def _on_speaking_frame(self, frame: AudioFrame, res: VADResult) -> None:
+        if self._respond_task is not None and self._respond_task.done():
+            await self._finish_speaking()
+            return
+        if res.is_speech:
+            self._barge_ms += frame.duration_ms
+            if self._barge_ms >= self.barge_in_ms:
+                await self._barge_in()
+        else:
+            self._barge_ms = max(0.0, self._barge_ms - frame.duration_ms)
+
+    async def _speak(self, transcript: str, cancel: CancellationToken) -> None:
+        clauses = self.orchestrator.respond(transcript, self.latency, cancel)
+        first = True
+        try:
             async for chunk in self.components.tts.stream(clauses):
+                if cancel.cancelled:
+                    break
                 if not chunk.pcm:
                     continue
-                if first_audio:
-                    first_audio = False
+                if first:
+                    first = False
                     self.latency.mark_first_audio()
                 self.state.append_spoken(chunk.text)
                 await self.transport.send_audio(chunk)
+        except OperationCancelled:
+            pass
 
+    async def _finish_speaking(self) -> None:
+        await _drain(self._respond_task)
+        self._respond_task = None
         self.state.complete_agent_turn()
         reply = self.state.history[-1].content if self.state.history else ""
-        _log.info("agent_reply", turn_id=turn_id, text=reply)
+        _log.info("agent_reply", turn_id=self._resp_turn_id, text=reply)
+        self._report_turn()
+        self._begin_listening()
+
+    async def _barge_in(self) -> None:
+        if self._cancel is not None:
+            self._cancel.cancel("barge-in")
+        await self.transport.flush()  # client drops queued audio -> ≤200 ms stop
+        await _drain(self._respond_task)
+        self._respond_task = None
+        record = self.state.barge_in()  # SPEAKING -> INTERRUPTED -> LISTENING, truncated
+        if self.metrics is not None:
+            self.metrics.barge_in.inc()
+        self.tracer.event("barge_in", {"spoken": record.spoken_text})
+        _log.info("barge_in", turn_id=self._resp_turn_id, spoken=record.spoken_text)
+        self._report_turn()
+        self._begin_listening()
+
+    def _report_turn(self) -> None:
         report = self.latency.end_turn()
         if report is not None:
             _log.info(
                 "turn_latency",
-                turn_id=turn_id,
+                turn_id=self._resp_turn_id,
                 **{k: round(v, 1) for k, v in report.as_dict().items()},
             )
 
+    async def _on_stream_end(self) -> None:
+        # Finish a reply that was still in flight when the audio stream ended.
+        if self.state.state is TurnState.SPEAKING and self._respond_task is not None:
+            await _drain(self._respond_task)
+            self._respond_task = None
+            with contextlib.suppress(Exception):
+                self.state.complete_agent_turn()
+            self._report_turn()
+        if self._stt_task is not None:
+            if self._stt_in is not None:
+                self._stt_in.close()
+            await _drain(self._stt_task)
+            self._stt_task = None
 
-async def _drain(task: asyncio.Task[None]) -> None:
+
+async def _drain(task: asyncio.Task[None] | None) -> None:
+    if task is None:
+        return
     try:
         await task
-    except Exception as exc:  # fail soft — a dead STT must not crash the session
-        _log.warning("stt_task_failed", error=str(exc))
+    except Exception as exc:  # fail soft — a dead stage must not crash the session
+        _log.warning("task_failed", error=str(exc))

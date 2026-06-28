@@ -54,6 +54,7 @@ class TurnSettings(BaseModel):
     max_utterance_ms: int = 15000
     semantic_enabled: bool = True
     min_speech_ms: int = 200  # minimum voiced audio before a silence can endpoint
+    barge_in_ms: int = 150  # confirmed user speech during SPEAKING that triggers barge-in
 
 
 class LLMSettings(BaseModel):

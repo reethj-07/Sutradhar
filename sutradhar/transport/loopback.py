@@ -8,6 +8,7 @@ by the M1 integration test and `sutradhar demo --stub`.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterable
 
 from sutradhar.core.types import AudioChunk, AudioFrame, SessionEvent
@@ -22,15 +23,19 @@ class LoopbackTransport:
         frames: Iterable[AudioFrame],
         *,
         sample_rate: int = 16000,
+        frame_delay_s: float = 0.0,
     ) -> None:
         self.session_id = session_id
         self.sample_rate = sample_rate
         self._frames = list(frames)
+        self.frame_delay_s = frame_delay_s  # pace frames in ~real time (barge-in tests)
         self.sent: list[AudioChunk] = []
         self._flushes = 0
 
     async def recv_audio(self) -> AsyncIterator[AudioFrame]:
         for frame in self._frames:
+            if self.frame_delay_s:
+                await asyncio.sleep(self.frame_delay_s)
             yield frame
 
     async def send_audio(self, chunk: AudioChunk) -> None:

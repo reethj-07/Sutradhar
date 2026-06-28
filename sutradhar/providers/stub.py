@@ -139,9 +139,12 @@ class StubTTS:
 
     name = "stub-tts"
 
-    def __init__(self, sample_rate: int = 22050, ms_per_char: float = 55.0) -> None:
+    def __init__(
+        self, sample_rate: int = 22050, ms_per_char: float = 55.0, chunk_delay_s: float = 0.0
+    ) -> None:
         self.sample_rate = sample_rate
         self.ms_per_char = ms_per_char
+        self.chunk_delay_s = chunk_delay_s  # simulate synthesis time (barge-in tests)
 
     async def start(self) -> None: ...
 
@@ -155,6 +158,8 @@ class StubTTS:
         async for fragment in text:
             if not fragment.strip():
                 continue
+            if self.chunk_delay_s:
+                await asyncio.sleep(self.chunk_delay_s)
             yield AudioChunk(
                 pcm=self._pcm_for(fragment),
                 sample_rate=self.sample_rate,
