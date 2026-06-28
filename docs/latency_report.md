@@ -20,11 +20,15 @@ detected) → first agent audio byte emitted (PRD §8).
 
 ## Measured (to be filled per milestone)
 
+Hardware note: the dev box is the PRD target (GTX 1650 4 GB) but the **NVIDIA
+driver is currently uninstalled**, so STT fell back to CPU for these runs. Restore
+the driver + CUDA 12 / cuDNN 9 (ctranslate2 deps) to capture the GPU baseline.
+
 | Build | Scenario | V2V | STT | LLM | TTS | Hardware | Notes |
 |---|---|---|---|---|---|---|---|
-| M1 CPU (small) | synthetic WS, warm | ~7.8 s | 6.9 s | 0.54 s | <0.5 s | **AMD Vega 8 / CPU** | correct transcript+reply; STT-bound |
-| M1 CPU (base) | synthetic WS, warm | 3.7–4.7 s | ~1.6 s | 1.1–1.4 s | <0.5 s | **AMD Vega 8 / CPU** | accurate; recommended CPU model |
-| M1 target | — | 0.8–1.2 s | 0.15–0.25 s | 0.3–0.6 s | 0.1–0.3 s | GTX 1650 (GPU STT) | _to capture on GPU_ |
+| M1 CPU (small) | synthetic WS, warm | ~7.8 s | 6.9 s | 0.54 s | <0.5 s | GTX 1650 box, **CPU** (no driver) | correct; STT-bound |
+| M1 CPU (base) | synthetic WS + live mic, warm | 3.0–4.7 s | ~1.6 s | 1.0–1.4 s | <0.5 s | GTX 1650 box, **CPU** (no driver) | accurate; live voice verified |
+| M1 target | — | 0.8–1.2 s | 0.15–0.25 s | 0.3–0.6 s | 0.1–0.3 s | GTX 1650 (GPU STT) | _capture after restoring NVIDIA driver_ |
 
 > The M1 functional loop is verified end-to-end (browser-equivalent client →
 > real Silero/Whisper/Ollama/Piper → audio out). On CPU, STT dominates; switching

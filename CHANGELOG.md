@@ -48,8 +48,9 @@ its first tagged release, so everything lives under *Unreleased* by milestone.
 **Acceptance met:** a spoken question gets a spoken answer over the browser
 WebSocket client; per-stage + voice-to-voice latency recorded; baseline reported.
 Verified live on real hardware — mic → Silero VAD → faster-whisper → Qwen2.5-3B
-(Ollama) → Piper → speaker, ~3 s voice-to-voice on CPU (AMD Vega 8; no NVIDIA
-GPU on this box, so STT ran on CPU — the GTX 1650 GPU number is still to capture).
+(Ollama) → Piper → speaker, ~3 s voice-to-voice. The dev box is the PRD target
+(GTX 1650 4 GB) but its NVIDIA driver is currently uninstalled, so STT fell back
+to CPU; restoring the driver + CUDA/cuDNN will hit the 0.8–1.2 s GPU baseline.
 
 Done:
 - **Streaming half-duplex `Pipeline`** wiring Transport → VAD → STT →
