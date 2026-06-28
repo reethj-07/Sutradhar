@@ -25,7 +25,8 @@ _log = get_logger("providers.vad.silero")
 
 # Official Silero v5 ONNX model (small; CPU). Cached under ./models on first run.
 _MODEL_URL = "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"
-_WINDOW = 512  # samples required by the v5 model at 16 kHz
+_WINDOW = 512  # new samples per inference at 16 kHz
+_CONTEXT = 64  # samples of previous audio the v5 model prepends to each window
 
 
 class SileroVAD:
@@ -38,6 +39,7 @@ class SileroVAD:
         self._model_path = Path("models") / "silero_vad.onnx"
         self._session: Any = None
         self._state = np.zeros((2, 1, 128), dtype=np.float32)
+        self._context = np.zeros((1, _CONTEXT), dtype=np.float32)
         self._buffer = np.zeros(0, dtype=np.float32)
         self._last_prob = 0.0
 
@@ -65,12 +67,16 @@ class SileroVAD:
         _log.info("silero_vad_ready", threshold=self.threshold)
 
     def _infer(self, window: np.ndarray) -> float:
+        # v5 prepends 64 samples of prior audio as context (512 -> 576 input).
+        chunk = window.reshape(1, -1).astype(np.float32)
+        x = np.concatenate([self._context, chunk], axis=1)
         inputs = {
-            "input": window.reshape(1, -1).astype(np.float32),
+            "input": x,
             "state": self._state,
             "sr": np.array(self.sample_rate, dtype=np.int64),
         }
         out, self._state = self._session.run(None, inputs)
+        self._context = chunk[:, -_CONTEXT:]
         return float(out[0][0])
 
     def detect(self, frame: AudioFrame) -> VADResult:
@@ -90,6 +96,7 @@ class SileroVAD:
 
     def reset(self) -> None:
         self._state = np.zeros((2, 1, 128), dtype=np.float32)
+        self._context = np.zeros((1, _CONTEXT), dtype=np.float32)
         self._buffer = np.zeros(0, dtype=np.float32)
         self._last_prob = 0.0
 
