@@ -122,7 +122,7 @@ docs/              # PRD, architecture, ADRs, latency report
 | Milestone | Deliverable | Status |
 |---|---|---|
 | **M0** | Scaffold, packaging, config, interfaces, observability/reliability skeleton, CI, docs | ✅ done |
-| **M1** | Half-duplex streaming loop (mic→VAD→STT→LLM→TTS→speaker) over browser WS + latency | ✅ built · ⏳ baseline on GPU |
+| **M1** | Half-duplex streaming loop (mic→VAD→STT→LLM→TTS→speaker) over browser WS + latency | ✅ done (live voice; ~3 s v2v on CPU) |
 | **M2** | Turn-taking + barge-in (semantic endpointing, cancellation, state reconciliation) | ⬜ |
 | **M3** | Dialogue: state machine, memory, tool-calling, demo vertical + mock backend | ⬜ |
 | **M4** | Evaluation: synthetic callers, ASR-noise, LLM-judge, CI regression gate | ⬜ |

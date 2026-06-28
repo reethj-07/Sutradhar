@@ -15,7 +15,10 @@ before the next begins. `[x]` done · `[~]` in progress · `[ ]` pending.
 - [x] CI, pre-commit, Makefile/tasks.ps1, README/CHANGELOG/ADRs
 - [x] Unit tests green; ruff/black/mypy clean
 
-## M1 — Core loop  ⏳  (acceptance: spoken Q → spoken A; per-stage latency recorded; baseline reported)
+## M1 — Core loop  ✅  (acceptance met: spoken Q → spoken A live; latency recorded)
+<!-- Live-verified in browser: mic -> Silero -> faster-whisper -> Qwen2.5-3B -> Piper -> speaker,
+     ~3s voice-to-voice on CPU. GPU baseline (GTX 1650) still to capture. -->
+
 - [x] Silero VAD (onnxruntime, CPU) — real `detect()` with auto-downloaded ONNX
 - [x] faster-whisper STT (GPU, int8_float16) — streaming partials + final (+CPU fallback)
 - [x] Ollama LLM (Qwen2.5-3B) — streaming tokens + tool-call parsing

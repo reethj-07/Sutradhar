@@ -43,7 +43,13 @@ its first tagged release, so everything lives under *Unreleased* by milestone.
   state machine, turn detector, tool registry, latency, stubs, factory and the
   app endpoints.
 
-### M1 — Core loop  🚧 (in progress)
+### M1 — Core loop  ✅ (functional; live voice verified)
+
+**Acceptance met:** a spoken question gets a spoken answer over the browser
+WebSocket client; per-stage + voice-to-voice latency recorded; baseline reported.
+Verified live on real hardware — mic → Silero VAD → faster-whisper → Qwen2.5-3B
+(Ollama) → Piper → speaker, ~3 s voice-to-voice on CPU (AMD Vega 8; no NVIDIA
+GPU on this box, so STT ran on CPU — the GTX 1650 GPU number is still to capture).
 
 Done:
 - **Streaming half-duplex `Pipeline`** wiring Transport → VAD → STT →
