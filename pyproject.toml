@@ -127,7 +127,9 @@ line-length = 100
 target-version = ["py311"]
 
 [tool.mypy]
-python_version = "3.11"
+# Target 3.12 for type-checking (numpy's stubs use 3.12-only syntax); the code
+# stays 3.11-compatible and pytest validates the 3.11 runtime in CI.
+python_version = "3.12"
 strict = true
 warn_unreachable = true
 warn_redundant_casts = true
