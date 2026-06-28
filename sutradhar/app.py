@@ -40,6 +40,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.runtime = SessionRuntime(settings)
+        # Pre-load + warm provider models at startup (when using real providers)
+        # so the first connection is instant. Guarded: if a provider is missing
+        # or down, fall back to lazy load on first connection.
+        if settings.stt.provider != "stub":
+            try:
+                await app.state.runtime.ensure_components()
+                _log.info("components_prewarmed")
+            except Exception as exc:  # degrade to lazy load on first connection
+                _log.warning("prewarm_failed_will_load_lazily", error=str(exc))
         yield
         await app.state.runtime.aclose()
 

@@ -9,7 +9,20 @@ from sutradhar.core.config import Settings
 
 
 def _client() -> TestClient:
-    return TestClient(create_app(Settings(env="ci")))
+    # Stub providers => the lifespan skips model pre-warm, keeping these
+    # operational-endpoint tests fast and model-free (CI-safe).
+    settings = Settings.model_validate(
+        {
+            "env": "ci",
+            "vad": {"provider": "stub"},
+            "stt": {"provider": "stub"},
+            "turn": {"provider": "stub"},
+            "llm": {"provider": "stub"},
+            "tts": {"provider": "stub"},
+            "memory": {"provider": "stub"},
+        }
+    )
+    return TestClient(create_app(settings))
 
 
 def test_healthz() -> None:

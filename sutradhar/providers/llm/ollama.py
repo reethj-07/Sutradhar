@@ -46,12 +46,21 @@ class OllamaLLM:
         from ollama import AsyncClient
 
         self._client = AsyncClient(host=self.s.base_url)
-        # Best-effort warm check; don't hard-fail here (failover handles a down server).
+        # Best-effort warm-up: load the model into RAM now (one token) so the
+        # user's first real turn isn't a 10-20s cold start. Don't hard-fail here
+        # (failover handles a down server).
         try:
             await self._client.list()
-            _log.info("ollama_ready", model=self.model, host=self.s.base_url)
+            await self._client.chat(
+                model=self.model,
+                messages=[{"role": "user", "content": "hi"}],
+                stream=False,
+                options={"num_predict": 1},
+                keep_alive=self.s.keep_alive,
+            )
+            _log.info("ollama_ready", model=self.model, host=self.s.base_url, warmed=True)
         except Exception as exc:
-            _log.warning("ollama_list_failed", error=str(exc))
+            _log.warning("ollama_warmup_failed", error=str(exc))
 
     @property
     def _options(self) -> dict[str, Any]:
