@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sutradhar — Voice Agent (diagnostic client)</title>
+  <title>Sutradhar — Voice Agent</title>
   <style>
     :root { color-scheme: dark; }
     body { font-family: system-ui, sans-serif; background: #0b0e14; color: #d6deeb;
@@ -12,25 +12,32 @@
     h1 { font-weight: 650; letter-spacing: .3px; }
     .card { background: #11161f; border: 1px solid #1d2735; border-radius: 14px;
             padding: 22px 24px; }
-    button { font-size: 1rem; padding: 12px 20px; border-radius: 10px; border: 0;
+    button { font-size: 1rem; padding: 12px 22px; border-radius: 10px; border: 0;
              background: #2f81f7; color: white; cursor: pointer; }
     button:disabled { opacity: .5; cursor: default; }
-    .muted { color: #7c8aa0; font-size: .92rem; }
-    #log { margin-top: 18px; white-space: pre-wrap; font-family: ui-monospace, monospace;
-           font-size: .85rem; max-height: 280px; overflow:auto; }
-    .pill { display:inline-block; padding:2px 10px; border-radius:999px; background:#1d2735; }
+    .row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+    #status { font-size: .95rem; color: #7c8aa0; }
+    #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: .82rem;
+           max-height: 300px; overflow: auto; background: #0b0e14; border: 1px solid #1d2735;
+           border-radius: 10px; padding: 12px; }
+    .pill { display:inline-block; padding:2px 10px; border-radius:999px; background:#1d2735;
+            font-size: .8rem; }
+    a { color: #2f81f7; }
   </style>
 </head>
 <body>
   <main>
-    <h1>Sutradhar <span class="pill">diagnostic client</span></h1>
+    <h1>Sutradhar <span class="pill">voice agent</span></h1>
     <div class="card">
-      <p class="muted">
-        Browser microphone client for the Sutradhar voice agent. The streaming
-        WebSocket pipeline (mic → VAD → STT → LLM → TTS → speaker) is wired in
-        <strong>M1</strong>; this page is the scaffold placeholder.
+      <div class="row">
+        <button id="talk" disabled>Start talking</button>
+        <span id="status">idle</span>
+      </div>
+      <p style="color:#7c8aa0; font-size:.9rem; margin-top:0">
+        Half-duplex (M1): speak, then pause — the agent detects your endpoint and
+        replies. Allow microphone access when prompted. Outbound lead-qualification
+        persona; tool-calling lands in M3.
       </p>
-      <button id="talk" disabled>Hold to talk (M1)</button>
       <div id="log"></div>
     </div>
   </main>
