@@ -76,6 +76,8 @@ function playPcm(int16) {
 async function start() {
   if (running) return;
   ctx = new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume(); // browsers start the context suspended until a user gesture
+  log(`AudioContext: ${ctx.state} @ ${ctx.sampleRate} Hz`);
   await ctx.audioWorklet.addModule("./worklet.js");
 
   micStream = await navigator.mediaDevices.getUserMedia({
@@ -97,7 +99,9 @@ async function start() {
       if (msg.event === "barge_in") playhead = 0; // drop queued audio (M2)
       return;
     }
-    playPcm(new Int16Array(ev.data));
+    const pcm = new Int16Array(ev.data);
+    log(`◀ agent audio ${pcm.length} samples (${(pcm.length / RECV_RATE).toFixed(2)}s), ctx=${ctx.state}`);
+    playPcm(pcm);
   };
   ws.onclose = () => {
     setStatus("disconnected", false);

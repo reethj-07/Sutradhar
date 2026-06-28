@@ -176,6 +176,8 @@ class Pipeline:
                 await self.transport.send_audio(chunk)
 
         self.state.complete_agent_turn()
+        reply = self.state.history[-1].content if self.state.history else ""
+        _log.info("agent_reply", turn_id=turn_id, text=reply)
         report = self.latency.end_turn()
         if report is not None:
             _log.info(
