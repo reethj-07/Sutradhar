@@ -52,3 +52,16 @@ def test_index_reports_providers() -> None:
         body = client.get("/").json()
         assert body["service"] == "sutradhar"
         assert "vad" in body["providers"]
+
+
+def test_ws_origin_policy() -> None:
+    """Loopback/no-origin allowed; cross-site origins rejected (CSWSH guard)."""
+    from sutradhar.app import _origin_allowed
+    from sutradhar.core.config import Settings
+
+    s = Settings.model_validate({"security": {"allowed_ws_origins": ["https://ops.example.com"]}})
+    assert _origin_allowed(None, s) is True  # native client
+    assert _origin_allowed("http://127.0.0.1:8080", s) is True  # loopback
+    assert _origin_allowed("http://localhost:5173", s) is True  # loopback
+    assert _origin_allowed("https://ops.example.com", s) is True  # allowlisted
+    assert _origin_allowed("https://evil.example.com", s) is False  # cross-site
