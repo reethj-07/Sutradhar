@@ -42,6 +42,10 @@ class STTSettings(BaseModel):
     compute_type: str = "int8_float16"
     language: str = "en"
     beam_size: int = 1  # greedy for latency
+    # Periodic partial re-transcription is cheap on GPU but O(n^2)-expensive on
+    # CPU; default off (transcribe once at endpoint). Enable when on cuda.
+    emit_partials: bool = False
+    partial_interval_ms: int = 480
 
 
 class TurnSettings(BaseModel):
@@ -49,7 +53,7 @@ class TurnSettings(BaseModel):
     silence_ms: int = 480
     max_utterance_ms: int = 15000
     semantic_enabled: bool = True
-    min_endpoint_chars: int = 2
+    min_speech_ms: int = 200  # minimum voiced audio before a silence can endpoint
 
 
 class LLMSettings(BaseModel):
@@ -60,6 +64,7 @@ class LLMSettings(BaseModel):
     temperature: float = 0.4
     max_tokens: int = 512
     num_ctx: int = 4096
+    keep_alive: str = "30m"  # keep the model resident so turns after the first are fast
 
 
 class TTSSettings(BaseModel):

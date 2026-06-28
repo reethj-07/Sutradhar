@@ -76,6 +76,7 @@ class OllamaLLM:
                 tools=list(tools) if tools else None,
                 stream=True,
                 options=self._options,
+                keep_alive=self.s.keep_alive,
             )
             async for chunk in stream:
                 msg = _get(chunk, "message", {})
@@ -107,7 +108,11 @@ class OllamaLLM:
             await self.start()
         payload = [m.to_openai() for m in messages]
         resp = await self._client.chat(
-            model=self.model, messages=payload, stream=False, options=self._options
+            model=self.model,
+            messages=payload,
+            stream=False,
+            options=self._options,
+            keep_alive=self.s.keep_alive,
         )
         return str(_get(_get(resp, "message", {}), "content", "") or "")
 

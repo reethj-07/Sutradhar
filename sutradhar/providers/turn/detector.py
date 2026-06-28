@@ -41,7 +41,7 @@ class HybridTurnDetector:
         self.semantic_enabled = (
             settings.turn.semantic_enabled and settings.turn.provider == "hybrid"
         )
-        self.min_chars = settings.turn.min_endpoint_chars
+        self.min_speech_ms = settings.turn.min_speech_ms
 
     async def start(self) -> None: ...
 
@@ -61,14 +61,18 @@ class HybridTurnDetector:
 
     def observe(self, ctx: TurnContext) -> EndpointDecision:
         text = ctx.transcript.strip()
+        # Acoustic endpoint depends on VAD silence after enough voiced audio, NOT
+        # on a transcript — so endpointing never waits on (CPU-expensive) STT
+        # partials. Semantic completeness only *refines* this when a transcript
+        # happens to be available.
         acoustic = (
             not ctx.is_speech
             and ctx.trailing_silence_ms >= self.silence_ms
-            and len(text) >= self.min_chars
+            and ctx.utterance_ms >= self.min_speech_ms
         )
 
         # Hard stop: utterance ran too long — endpoint regardless.
-        if ctx.utterance_ms >= self.max_utterance_ms and text:
+        if ctx.utterance_ms >= self.max_utterance_ms:
             return EndpointDecision(
                 endpoint=True,
                 confidence=0.6,
@@ -77,7 +81,9 @@ class HybridTurnDetector:
                 semantic=False,
             )
 
-        if not self.semantic_enabled:
+        # Acoustic-only when semantics are disabled (vad_pause) OR no transcript
+        # is available yet (e.g. partials off on CPU) — never block on STT.
+        if not self.semantic_enabled or not text:
             return EndpointDecision(
                 endpoint=acoustic,
                 confidence=1.0 if acoustic else 0.0,

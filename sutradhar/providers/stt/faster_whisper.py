@@ -33,7 +33,8 @@ class FasterWhisperSTT:
         self.settings = settings
         self.s = settings.stt
         self._model: Any = None
-        self.partial_interval_ms = 480.0
+        self.emit_partials = self.s.emit_partials
+        self.partial_interval_ms = float(self.s.partial_interval_ms)
 
     async def start(self) -> None:
         if self._model is not None:
@@ -78,7 +79,9 @@ class FasterWhisperSTT:
                 s = resample(s, frame.sample_rate, _TARGET_SR)
             parts.append(s)
             total_ms += frame.duration_ms
-            if total_ms - last_partial_ms >= self.partial_interval_ms:
+            # Periodic partials are opt-in (GPU); on CPU we accumulate cheaply and
+            # transcribe once at endpoint to avoid O(n^2) re-transcription cost.
+            if self.emit_partials and total_ms - last_partial_ms >= self.partial_interval_ms:
                 last_partial_ms = total_ms
                 text = await self._transcribe(np.concatenate(parts))
                 if text:

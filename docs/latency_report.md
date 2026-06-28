@@ -20,9 +20,14 @@ detected) → first agent audio byte emitted (PRD §8).
 
 ## Measured (to be filled per milestone)
 
-| Build | Scenario | V2V P50 | V2V P95 | STT | LLM 1st tok | TTS 1st chunk | Notes |
+| Build | Scenario | V2V | STT | LLM | TTS | Hardware | Notes |
 |---|---|---|---|---|---|---|---|
-| M1 baseline | — | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ | first end-to-end |
+| M1 first run | synthetic WS (1 turn) | ~7.8 s | 6.9 s | 0.54 s (warm) | <0.5 s | **AMD Vega 8 / CPU** | correct transcript+reply; CPU-bound by Whisper (no NVIDIA) |
+| M1 target | — | 0.8–1.2 s | 0.15–0.25 s | 0.3–0.6 s | 0.1–0.3 s | GTX 1650 (GPU STT) | _to capture on GPU_ |
+
+> The M1 functional loop is verified end-to-end (browser-equivalent client →
+> real Silero/Whisper/Ollama/Piper → audio out). On CPU, STT dominates; switching
+> STT to GPU (or a smaller model like `base`/`tiny` on CPU) is the main lever.
 
 ## Method
 
