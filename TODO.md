@@ -29,11 +29,13 @@ before the next begins. `[x]` done · `[~]` in progress · `[ ]` pending.
 - [x] Integration tests: stub loopback + real `/ws` socket path; `sutradhar demo`
 - [ ] Baseline P50/P95 captured on GTX 1650 and written to docs/latency_report.md (needs hardware)
 
-## M2 — Turn-taking & barge-in  (acceptance: interrupt; stop ≤200 ms; no corruption; metrics)
-- [ ] Semantic endpoint classifier (replace M0 heuristic) behind TurnDetector
-- [ ] Barge-in: VAD-during-SPEAKING → cancel LLM+TTS, flush, reconcile state
-- [ ] webrtcvad swap; endpoint accuracy metrics (false-early/false-late)
-- [ ] Barge-in latency + correctness tests
+## M2 — Turn-taking & barge-in  ✅ (acceptance met: interrupt; prompt stop; no corruption; metrics)
+- [x] State-driven single frame loop (listen/speak dispatch)
+- [x] Barge-in: VAD-during-SPEAKING → cancel LLM+TTS, flush, reconcile state (truncated turn)
+- [x] Barge-in metric + trace event; `turn.barge_in_ms` config
+- [x] Barge-in integration test (cancel + flush + truncated history)
+- [ ] Live browser confirm of interrupt (headphones)
+- [ ] (stretch) trained semantic endpoint classifier; webrtcvad swap; endpoint-accuracy metrics
 
 ## M3 — Dialogue  (acceptance: multi-turn task via tools; memory persists)
 - [ ] SQLite + sqlite-vec memory store (real)

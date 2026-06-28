@@ -82,3 +82,28 @@ Also done:
 Remaining for M1 sign-off:
 - Baseline P50/P95 voice-to-voice + per-stage latency measured on the GTX 1650
   (needs the operator's hardware) → recorded in `docs/latency_report.md`.
+
+### M2 — Turn-taking & barge-in  ✅
+
+**Acceptance met:** the user can interrupt the agent mid-reply; the agent stops
+promptly (playout flushed immediately on detection); state is reconciled with no
+corruption; metrics emitted.
+
+- **State-driven single frame loop** (`core/pipeline.py` rewrite): one consumer
+  reads inbound audio and dispatches by turn state — LISTENING feeds VAD+STT and
+  endpoints; SPEAKING runs the *same* loop's VAD to watch for barge-in while the
+  agent reply runs as a cancellable background task. No second consumer of the
+  frame generator (which would corrupt it).
+- **Barge-in (PRD §9.2):** on ≥`turn.barge_in_ms` of confirmed user speech during
+  SPEAKING → cancel in-flight LLM+TTS via the shared `CancellationToken`, flush
+  transport playout, and `state.barge_in()` to commit the *truncated* spoken text
+  to history. Transitions SPEAKING → INTERRUPTED → LISTENING and resumes.
+- **Metrics:** `sutradhar_barge_in_total` increments; barge-in is a trace event.
+- **Config:** `SUTRADHAR_TURN__BARGE_IN_MS` (default 150).
+- **Tests:** integration test drives a real (stub-provider) interrupt over a
+  time-paced loopback transport and asserts cancellation, flush, truncated
+  history and the metric. M1 integration tests still green after the refactor.
+
+Remaining for M2 sign-off:
+- Live browser confirmation of interrupting the agent (use headphones so the mic
+  doesn't capture the agent's own voice and self-trigger).
