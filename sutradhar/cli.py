@@ -55,6 +55,10 @@ def serve(
         host=host or s.host,
         port=port or s.port,
         log_level=s.log_level.lower(),
+        # Disable WebSocket keepalive pings: a CPU turn or a long agent reply can
+        # exceed the default 20s window and would otherwise drop the call.
+        ws_ping_interval=None,
+        ws_ping_timeout=None,
     )
 
 
