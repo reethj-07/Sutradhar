@@ -37,10 +37,13 @@ before the next begins. `[x]` done · `[~]` in progress · `[ ]` pending.
 - [ ] Live browser confirm of interrupt (headphones)
 - [ ] (stretch) trained semantic endpoint classifier; webrtcvad swap; endpoint-accuracy metrics
 
-## M3 — Dialogue  (acceptance: multi-turn task via tools; memory persists)
-- [ ] SQLite + sqlite-vec memory store (real)
-- [ ] Mock CRM backend (lookup_customer/book_slot/get_order_status/update_disposition)
-- [ ] Orchestrator tool-call loop; memory injection; finalize demo vertical
+## M3 — Dialogue  ✅ (acceptance met: multi-turn task via tools; memory persists)
+- [x] SQLite memory store (persist + lexical retrieve; sqlite-vec vector path documented)
+- [x] Mock CRM backend (lookup_customer/book_slot/get_order_status/update_disposition) + seed
+- [x] Orchestrator streaming tool-call loop (bounded); memory recall+persist; CRM tools wired
+- [x] Tests incl. end-to-end capstone (book-a-slot via tool call) + adversarial review
+- [ ] Live browser demo (mock backend + serve + book a slot by voice)
+- [ ] (stretch) sqlite-vec embeddings for semantic recall
 
 ## M4 — Evaluation  (acceptance: `make eval` runs scenarios; CI regression gate)
 - [ ] Synthetic caller simulator (LLM persona → TTS → pipeline)

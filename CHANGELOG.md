@@ -107,3 +107,50 @@ corruption; metrics emitted.
 Remaining for M2 sign-off:
 - Live browser confirmation of interrupting the agent (use headphones so the mic
   doesn't capture the agent's own voice and self-trigger).
+
+### M3 — Dialogue (memory, tool-calling, demo vertical)  ✅
+
+**Acceptance met:** a multi-turn task completes via tool calls and memory persists
+across turns (verified end-to-end through the real pipeline with the mock backend).
+
+- **Mock CRM backend** (`mock_backend/`, FastAPI + SQLite): seeded customers /
+  slots / orders and four tool endpoints — `lookup_customer`, `book_slot`,
+  `get_order_status`, `update_disposition` — all parameterized SQL with pydantic
+  input validation (a hallucinated arg yields a clean 4xx, never bad SQL).
+- **CRM tools** (`dialogue/tools_crm.py`): the four tools with JSON schemas + HTTP
+  handlers; fail-soft (backend error → `ok=False` result, conversation continues).
+  Accept an injected httpx client for in-process (ASGI) testing.
+- **Streaming tool-calling loop** (`dialogue/orchestrator.py`): stream the LLM,
+  speak any pre-tool text, execute requested tools, feed `role=tool` results back,
+  and continue until a final answer — bounded by `max_tool_rounds` (no infinite
+  loops). Tool-result text is treated as data, not instructions.
+- **SqliteMemoryStore**: persistent (across turns/sessions) SQLite memory with
+  lexical retrieval; recalled before each turn and the exchange persisted after.
+  sqlite-vec vector recall is the documented drop-in upgrade.
+- **Wiring**: `SessionRuntime` builds/starts one shared memory store + tool
+  registry; `runtime.build` injects them; `/ws` uses them.
+- **Tests:** mock-CRM endpoints (incl. SQL-injection-inert check), memory
+  persist/retrieve, the tool loop (execute→feed-back→answer, bounded), CRM tools
+  against the in-process backend, and an end-to-end capstone (book a slot via tool
+  call → backend updated → spoken confirmation → memory persisted). Reviewed by a
+  multi-agent adversarial pass.
+
+**Adversarial review** (multi-agent, 12 confirmed findings) fixed in M3:
+- Tool loop threads the *full* per-round assistant text back (was dropping the
+  pre-tool narration); exhausted tool rounds now force a final tools-disabled
+  answer and a last-resort holding phrase so a turn is never silent.
+- SQLite memory: capped row text, recall scans only the recent N rows, and all
+  sqlite work runs in a worker thread under a lock (never blocks the loop / no
+  statement interleaving); WAL + busy_timeout on disk.
+- `ConversationMemory.recall/remember` are fail-soft (a store error can't break a
+  turn). `SessionRuntime` init is atomic (tears down on partial failure) and now
+  shares one httpx client for CRM tools.
+- `/ws` validates Origin (blocks cross-site WebSocket hijacking; loopback +
+  configurable allowlist) and handles the session limit gracefully.
+
+Deferred (documented): cross-*call* memory needs a stable caller identity
+(arrives with telephony in M5); OpenAI-style `tool_calls.arguments` as a JSON
+string (only affects the M5 OpenAI-compatible adapter, latent today).
+
+Remaining for M3 sign-off:
+- Live browser demo: run the mock backend + server and book a slot by voice.
