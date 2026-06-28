@@ -14,6 +14,9 @@ from collections.abc import Sequence
 
 from sutradhar.core.types import Message
 from sutradhar.interfaces.memory import MemoryRecord, MemoryStore
+from sutradhar.observability.logging import get_logger
+
+_log = get_logger("dialogue.memory")
 
 
 class ConversationMemory:
@@ -42,10 +45,19 @@ class ConversationMemory:
         return head + tail
 
     async def remember(self, text: str, *, kind: str = "turn") -> None:
-        if self.store is not None:
+        # Best-effort: a memory-store error must never break the conversation.
+        if self.store is None:
+            return
+        try:
             await self.store.append(self.session_id, text, kind=kind)
+        except Exception as exc:  # logged, swallowed (best-effort)
+            _log.warning("memory_remember_failed", error=str(exc))
 
     async def recall(self, query: str) -> list[MemoryRecord]:
         if self.store is None:
             return []
-        return await self.store.retrieve(self.session_id, query, k=self.retrieve_k)
+        try:
+            return await self.store.retrieve(self.session_id, query, k=self.retrieve_k)
+        except Exception as exc:  # logged, swallowed (best-effort)
+            _log.warning("memory_recall_failed", error=str(exc))
+            return []

@@ -24,12 +24,30 @@ from sutradhar.observability.logging import configure_logging, get_logger
 from sutradhar.observability.metrics import get_metrics
 from sutradhar.observability.tracing import get_tracer
 from sutradhar.reliability.health import HealthRegistry
-from sutradhar.runtime import SessionRuntime, build_pipeline
+from sutradhar.runtime import SessionRuntime
 from sutradhar.transport.websocket import WebSocketTransport
 
 _log = get_logger("app")
 
 _CLIENT_DIR = Path(__file__).resolve().parent.parent / "clients" / "web"
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
+
+
+def _origin_allowed(origin: str | None, settings: Settings) -> bool:
+    """Allow loopback origins (and a configured allowlist); reject the rest.
+
+    Browsers don't apply same-origin policy to WebSockets, so without this a page
+    the user visits could open a session against their local instance (CSWSH).
+    A missing Origin (native/non-browser client) is allowed.
+    """
+    if not origin:
+        return True
+    if origin in settings.security.allowed_ws_origins:
+        return True
+    from urllib.parse import urlparse
+
+    host = urlparse(origin).hostname or ""
+    return host in _LOOPBACK_HOSTS
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -96,29 +114,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.websocket("/ws")
     async def voice_ws(websocket: WebSocket) -> None:
-        """Half-duplex voice session: browser PCM in -> agent PCM out (M1)."""
+        """Voice session: browser PCM in -> agent PCM out, interruptible (M1/M2)."""
+        # Reject cross-site WebSocket hijacking before accepting the handshake.
+        if not _origin_allowed(websocket.headers.get("origin"), settings):
+            _log.warning("ws_origin_rejected", origin=websocket.headers.get("origin"))
+            await websocket.close(code=1008)  # policy violation
+            return
         await websocket.accept()
         runtime: SessionRuntime = app.state.runtime
         try:
-            components = await runtime.ensure_components()
+            await runtime.ensure_components()
         except Exception as exc:  # model load failed — report and bail
             _log.error("component_start_failed", error=str(exc))
             await websocket.send_json({"event": "error", "detail": {"message": str(exc)}})
             await websocket.close()
             return
 
-        session = await runtime.manager.create()
+        try:
+            session = await runtime.manager.create()
+        except RuntimeError as exc:  # session limit reached — fail gracefully
+            _log.warning("session_limit_reached", error=str(exc))
+            await websocket.send_json({"event": "error", "detail": {"message": "server busy"}})
+            await websocket.close(code=1013)  # try again later
+            return
         metrics.active_sessions.inc()
         transport = WebSocketTransport(
             websocket, session.session_id, sample_rate=settings.audio.sample_rate
         )
-        pipeline = build_pipeline(
-            session,
-            transport,
-            components=components,
-            metrics=metrics,
-            tracer=get_tracer(settings),
-        )
+        pipeline = runtime.build(session, transport, metrics=metrics, tracer=get_tracer(settings))
         _log.info("ws_session_started", session_id=session.session_id)
         try:
             await pipeline.run()

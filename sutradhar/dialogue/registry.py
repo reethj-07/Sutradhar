@@ -49,8 +49,8 @@ class InMemoryToolRegistry:
                 ok=False,
             )
         try:
-            return await tool.handler(call.arguments)
-        except Exception as exc:
+            result = await tool.handler(call.arguments)
+        except Exception as exc:  # fail soft, report to the LLM
             _log.warning("tool_failed", tool=call.name, error=str(exc))
             return ToolResult(
                 id=call.id,
@@ -58,3 +58,5 @@ class InMemoryToolRegistry:
                 content=json.dumps({"error": str(exc)}),
                 ok=False,
             )
+        # Stamp the call's id/name so handlers don't need to know them.
+        return ToolResult(id=call.id, name=call.name, content=result.content, ok=result.ok)

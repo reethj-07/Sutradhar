@@ -107,6 +107,13 @@ class BackendSettings(BaseModel):
     base_url: str = "http://127.0.0.1:8090"
 
 
+class SecuritySettings(BaseModel):
+    # Extra browser Origins allowed on the voice WebSocket (loopback is always
+    # allowed). Empty => loopback-only, which blocks cross-site WebSocket
+    # hijacking from a page the user happens to be visiting.
+    allowed_ws_origins: list[str] = Field(default_factory=list)
+
+
 class Settings(BaseSettings):
     """Root configuration object. Access via :func:`get_settings`."""
 
@@ -136,6 +143,7 @@ class Settings(BaseSettings):
     obs: ObsSettings = Field(default_factory=ObsSettings)
     reliability: ReliabilitySettings = Field(default_factory=ReliabilitySettings)
     backend: BackendSettings = Field(default_factory=BackendSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
 
 
 @lru_cache(maxsize=1)
