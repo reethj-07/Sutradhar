@@ -1,35 +1,51 @@
-"""FastAPI application: health, readiness, metrics and (from M1) the WebSocket
-voice endpoint (PRD §12 /healthz /readyz; §16).
+"""FastAPI application: health, readiness, metrics, the voice WebSocket and the
+browser client (PRD §12 /healthz /readyz; §16; M1 /ws).
 
-Importing this module is cheap (no ML). The app exposes operational endpoints
-from M0 so the scaffold is demonstrably runnable; the `/ws` voice endpoint is
-attached in M1.
+Importing this module is cheap (no ML). Provider models load lazily on the first
+WebSocket connection via :class:`SessionRuntime`, so `/healthz` and the static
+client are available instantly.
 """
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, WebSocket
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from sutradhar import __version__
 from sutradhar.core.config import Settings, get_settings
 from sutradhar.observability.logging import configure_logging, get_logger
 from sutradhar.observability.metrics import get_metrics
+from sutradhar.observability.tracing import get_tracer
 from sutradhar.reliability.health import HealthRegistry
+from sutradhar.runtime import SessionRuntime, build_pipeline
+from sutradhar.transport.websocket import WebSocketTransport
 
 _log = get_logger("app")
+
+_CLIENT_DIR = Path(__file__).resolve().parent.parent / "clients" / "web"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(level=settings.log_level, json_logs=settings.log_json)
+    metrics = get_metrics()
 
-    app = FastAPI(title="Sutradhar", version=__version__)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        app.state.runtime = SessionRuntime(settings)
+        yield
+        await app.state.runtime.aclose()
+
+    app = FastAPI(title="Sutradhar", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.health = HealthRegistry()
-    metrics = get_metrics()
 
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:
@@ -43,7 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ready = await registry.ready()
         statuses = {s.name: s.state.value for s in await registry.check()}
         return Response(
-            content=__import__("json").dumps({"ready": ready, "components": statuses}),
+            content=json.dumps({"ready": ready, "components": statuses}),
             media_type="application/json",
             status_code=200 if ready else 503,
         )
@@ -65,8 +81,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "llm": settings.llm.provider,
                 "tts": settings.tts.provider,
             },
-            "note": "Voice WebSocket endpoint /ws is attached in M1.",
+            "client": "/client/" if _CLIENT_DIR.exists() else None,
+            "websocket": "/ws",
         }
+
+    @app.websocket("/ws")
+    async def voice_ws(websocket: WebSocket) -> None:
+        """Half-duplex voice session: browser PCM in -> agent PCM out (M1)."""
+        await websocket.accept()
+        runtime: SessionRuntime = app.state.runtime
+        try:
+            components = await runtime.ensure_components()
+        except Exception as exc:  # model load failed — report and bail
+            _log.error("component_start_failed", error=str(exc))
+            await websocket.send_json({"event": "error", "detail": {"message": str(exc)}})
+            await websocket.close()
+            return
+
+        session = await runtime.manager.create()
+        metrics.active_sessions.inc()
+        transport = WebSocketTransport(
+            websocket, session.session_id, sample_rate=settings.audio.sample_rate
+        )
+        pipeline = build_pipeline(
+            session,
+            transport,
+            components=components,
+            metrics=metrics,
+            tracer=get_tracer(settings),
+        )
+        _log.info("ws_session_started", session_id=session.session_id)
+        try:
+            await pipeline.run()
+        except Exception as exc:  # never let one session crash the server
+            _log.warning("ws_session_error", session_id=session.session_id, error=str(exc))
+        finally:
+            metrics.active_sessions.dec()
+            await runtime.manager.close(session.session_id)
+            await transport.close()
+            _log.info("ws_session_ended", session_id=session.session_id)
+
+    if _CLIENT_DIR.exists():
+        app.mount("/client", StaticFiles(directory=str(_CLIENT_DIR), html=True), name="client")
 
     _log.info("app_created", version=__version__, env=settings.env)
     return app
