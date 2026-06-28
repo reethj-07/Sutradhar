@@ -46,23 +46,35 @@ Prerequisites: [Python 3.11/3.12](https://www.python.org/), [uv](https://docs.as
 # 2. Verify the scaffold (lint + types + tests — what CI runs)
 .\tasks.ps1 check
 
-# 3. Inspect the resolved configuration and run the server
+# 3. Inspect config and try the no-hardware demo (real pipeline, stub providers)
 .\.venv\Scripts\Activate.ps1
 sutradhar version          # prints the provider table
-sutradhar serve            # FastAPI on http://127.0.0.1:8080  (health/metrics; /ws lands in M1)
-sutradhar doctor           # checks GPU/Ollama/models for the full run path
+sutradhar demo             # drives the real pipeline end-to-end with stubs (no GPU/Ollama)
+sutradhar doctor           # checks GPU/Ollama/models for the full voice path
 ```
 
 Visit `http://127.0.0.1:8080/healthz`, `/readyz`, `/metrics`, and `/` (provider summary).
 
 > **Config:** copy `.env.example` → `.env` to override any provider/latency setting without touching code. Every setting is namespaced `SUTRADHAR_…` (nested with `__`), e.g. `SUTRADHAR_STT__MODEL_SIZE=base`.
 
-### The full local run path (M1+)
+### The full local voice path (real STT/LLM/TTS)
 
 ```powershell
-.\tasks.ps1 install        # installs faster-whisper, piper, onnxruntime, ollama client, sqlite-vec
-ollama pull qwen2.5:3b-instruct-q4_K_M
+.\tasks.ps1 install                       # faster-whisper, piper, onnxruntime, ollama client, sqlite-vec
+winget install Ollama.Ollama              # if not already installed
+ollama pull qwen2.5:3b-instruct-q4_K_M    # the default LLM
+sutradhar doctor                          # confirm GPU + Ollama + model are ready
+sutradhar serve                           # FastAPI + voice WebSocket on :8080
+# then open the browser mic client:
+start http://127.0.0.1:8080/client/
 ```
+
+Click **Start talking**, allow the mic, ask a question, then pause — Silero VAD +
+the turn engine detect your endpoint, faster-whisper transcribes (GPU), Qwen2.5-3B
+(Ollama) streams a reply clause-by-clause, and Piper speaks it back. The Silero VAD
+ONNX (~2 MB) and the Piper voice download to `./models/` on first run; the LLM is
+served by Ollama. Per-stage and **voice-to-voice** latency are logged per turn and
+exposed at `/metrics`.
 
 ---
 
@@ -110,7 +122,7 @@ docs/              # PRD, architecture, ADRs, latency report
 | Milestone | Deliverable | Status |
 |---|---|---|
 | **M0** | Scaffold, packaging, config, interfaces, observability/reliability skeleton, CI, docs | ✅ done |
-| **M1** | Half-duplex streaming loop (mic→VAD→STT→LLM→TTS→speaker) over browser WS + latency | ⏳ next |
+| **M1** | Half-duplex streaming loop (mic→VAD→STT→LLM→TTS→speaker) over browser WS + latency | ✅ built · ⏳ baseline on GPU |
 | **M2** | Turn-taking + barge-in (semantic endpointing, cancellation, state reconciliation) | ⬜ |
 | **M3** | Dialogue: state machine, memory, tool-calling, demo vertical + mock backend | ⬜ |
 | **M4** | Evaluation: synthetic callers, ASR-noise, LLM-judge, CI regression gate | ⬜ |

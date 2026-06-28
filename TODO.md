@@ -16,14 +16,15 @@ before the next begins. `[x]` done · `[~]` in progress · `[ ]` pending.
 - [x] Unit tests green; ruff/black/mypy clean
 
 ## M1 — Core loop  ⏳  (acceptance: spoken Q → spoken A; per-stage latency recorded; baseline reported)
-- [ ] Silero VAD (onnxruntime, CPU) — real `detect()`
-- [ ] faster-whisper STT (GPU, int8_float16) — streaming partials + final
-- [ ] Ollama LLM (Qwen2.5-3B) — streaming tokens + tool-call parsing
-- [ ] Piper TTS — first-clause streaming synthesis
-- [ ] WebSocket transport (server) + browser AudioWorklet mic client + playback
-- [ ] Pipeline: bounded-queue stage wiring; half-duplex loop
-- [ ] LatencyTracker wired through stages; baseline P50/P95 captured
-- [ ] Integration test on recorded audio; `sutradhar demo`
+- [x] Silero VAD (onnxruntime, CPU) — real `detect()` with auto-downloaded ONNX
+- [x] faster-whisper STT (GPU, int8_float16) — streaming partials + final (+CPU fallback)
+- [x] Ollama LLM (Qwen2.5-3B) — streaming tokens + tool-call parsing
+- [x] Piper TTS — first-clause streaming synthesis (auto-downloaded voice)
+- [x] WebSocket transport (server) + browser AudioWorklet mic client + playback
+- [x] Pipeline: bounded-queue stage wiring; half-duplex loop
+- [x] LatencyTracker wired through stages (voice-to-voice + per-stage)
+- [x] Integration tests: stub loopback + real `/ws` socket path; `sutradhar demo`
+- [ ] Baseline P50/P95 captured on GTX 1650 and written to docs/latency_report.md (needs hardware)
 
 ## M2 — Turn-taking & barge-in  (acceptance: interrupt; stop ≤200 ms; no corruption; metrics)
 - [ ] Semantic endpoint classifier (replace M0 heuristic) behind TurnDetector

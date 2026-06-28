@@ -61,7 +61,17 @@ Done:
 - Stub STT now streams incremental partials; `append_spoken` reassembles clauses
   with natural spacing.
 
-Next:
-- Real providers (Silero VAD, faster-whisper STT on GPU, Ollama LLM, Piper TTS).
-- WebSocket transport + browser AudioWorklet mic client + `/ws` wiring.
-- Baseline P50/P95 latency report measured on the GTX 1650.
+Also done:
+- **Real providers**: Silero VAD (onnxruntime, auto-downloaded ONNX, no torch),
+  faster-whisper STT (GPU `small` int8_float16 with periodic partial
+  re-transcription + CPU fallback), Ollama LLM (async streaming chat + tool-call
+  passthrough), Piper TTS (per-clause synthesis, auto-downloaded voice).
+- **Audio utilities** (PCM↔float, linear resample) with unit tests.
+- **WebSocket transport** + `/ws` endpoint + browser **AudioWorklet** mic client
+  (16 kHz capture, gapless 24 kHz playback) served at `/client/`.
+- `SessionRuntime` loads provider models once and shares them across sessions.
+- **WS integration test** (stub providers) exercises the real socket path in CI.
+
+Remaining for M1 sign-off:
+- Baseline P50/P95 voice-to-voice + per-stage latency measured on the GTX 1650
+  (needs the operator's hardware) → recorded in `docs/latency_report.md`.
